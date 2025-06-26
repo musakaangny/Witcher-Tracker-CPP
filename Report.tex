@@ -1,0 +1,662 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+
+\title{Project 3 - Witcher Tracker \\
+    \large Systems Programming - Spring 2025}
+\author{Musa Kaan Güney, 2022400300 
+    \and 
+    Hasan Yiğit Akıncı, 2022400138}
+
+\date{June 1, 2025}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+In the world of The Witcher, Geralt of Rivia must relearn his skills after losing his memory. The goal of this project is to implement a C++-based command-line interpreter that simulates Geralt's adventure by managing alchemical ingredients, potions, encounters, and magical knowledge.
+
+This report details the full design and implementation process, presents a high-level system overview, explains core components with pseudocode, and evaluates the program's structure, performance, and possible extensions.
+
+\subsection{Problem Description}
+The Witcher Tracker is a C++-based simulation system that models Geralt's alchemical and monster-hunting activities via structured text commands. It interprets user input, modifies internal data structures, and returns appropriate game-like responses in a terminal environment. The interpreter functions as a mini-command shell that handles actions and queries related to inventory, knowledge, and events.
+
+\subsection*{Functional Scope}
+The system implements a finite-state model of Geralt's knowledge and resources. It supports both state-modifying commands (e.g., loot, brew, learn) and informational queries (e.g., inventory counts or bestiary lookups). These operations reflect the logical progression of a simplified role-playing game scenario. The supported actions are deterministic and operate on internally tracked maps and vectors.
+
+\subsection*{Input Grammar}
+User commands must conform to a strict grammar that mimics natural language but is intentionally limited and well-defined to ensure consistent parsing. Commands are case-sensitive and must be correctly formatted, or the system will return \texttt{INVALID}.
+
+The input is parsed using custom logic in the \texttt{CommandParser} class, which tokenizes each line and validates syntax based on recognized sentence structures.
+
+\subsection*{Types of Supported Commands}
+\begin{enumerate}
+  \item \textbf{Knowledge Acquisition}
+    \begin{itemize}
+      \item Learn a new potion formula: \\
+        \texttt{Geralt learns Black Blood potion consists of 2 Rebis, 3 Vitriol}
+      \item Learn monster countermeasures: \\
+        \texttt{Geralt learns Igni sign is effective against Drowner}
+    \end{itemize}
+
+  \item \textbf{Inventory Management}
+    \begin{itemize}
+      \item Loot ingredients: \\
+        \texttt{Geralt loots 4 Quebrith, 2 Rebis}
+      \item Brew a potion (if formula is known and ingredients are sufficient): \\
+        \texttt{Geralt brews Black Blood}
+      \item Trade trophies for ingredients: \\
+        \texttt{Geralt trades 2 Drowner trophy for 5 Quebrith}
+    \end{itemize}
+    \newpage
+    
+
+  \item \textbf{Encounters}
+    \begin{itemize}
+      \item Simulate combat: \\
+        \texttt{Geralt encounters a Bruxa}
+    \end{itemize}
+
+  \item \textbf{Queries}
+    \begin{itemize}
+      \item Inventory query: \\
+        \texttt{Total potion?}  $\rightarrow$ e.g., \texttt{2 Black Blood, 1 Swallow}
+      \item Specific item count: \\
+        \texttt{Total ingredient Quebrith?} $\rightarrow$ e.g., \texttt{5}
+      \item Bestiary effectiveness: \\
+        \texttt{What is effective against Bruxa?} $\rightarrow$ e.g., \texttt{Black Blood, Yrden}
+      \item Alchemy formula check: \\
+        \texttt{What is in Black Blood?} $\rightarrow$ e.g., \texttt{3 Vitriol, 2 Rebis, 1 Quebrith}
+    \end{itemize}
+
+  \item \textbf{System Exit}
+    \begin{itemize}
+      \item \texttt{Exit}
+    \end{itemize}
+\end{enumerate}
+
+\subsection*{Expected Behavior}
+Upon receiving a valid command, the system:
+\begin{itemize}
+  \item Tokenizes the input line.
+  \item Validates it against grammar.
+  \item Identifies the command type.
+  \item Dispatches it to the relevant subsystem.
+  \item Returns an output message that matches the specification exactly.
+\end{itemize}
+
+If any validation fails, the system prints:
+\begin{center}
+  \texttt{INVALID}
+\end{center}
+
+\subsection*{Constraints}
+\begin{itemize}
+  \item Input length: \texttt{\\textless= 1024} characters.
+  \item All potion and monster names must consist of only alphabetic characters.
+  \item Potion names may contain spaces; ingredient and sign names may not.
+ 
+\end{itemize}
+
+\subsection{Objectives}
+\begin{itemize}
+  \item Develop a console-based interpreter that:
+    \begin{itemize}
+        \item Processes structured natural language commands.
+        \item Tracks and updates Geralt’s inventory for ingredients, potions, and trophies.
+        \item Manages the knowledge about monsters and effective signs and potions for them.
+        \item Handles alchemy recipes for brewing potions.
+        \item Simulates monster encounters, validating Geralt’s preparedness based on signs he knows and potions he owns.
+        \item Responds accurately to queries about Geralt's inventory, knowledge about recipes, and effective potions and signs against beasts.
+    \end{itemize}
+  \item Ensure all input follows a strict grammar format and reject invalid entries.  
+  \item Simulate inventory management, potion brewing, and monster encounters.
+  \item Support both knowledge acquisition and interactive queries.
+  \item Implement an extensible, object-oriented architecture using C++.
+  \item Comply with project constraints.
+\end{itemize}
+
+\subsection{Motivation}
+This project requires systems programming skills allowing to:
+\begin{itemize}
+    \item Gain experience with parsing and interpreting structured inputs.
+    \item Handle state management and simulation in a user-driven environment.
+    \item Appreciate the importance of syntax rules and command validation.
+\end{itemize}
+
+Moreover, it serves as a foundational exercise in building more complex interpreters or command-line tools, and reflects applications of language parsing, stateful systems, and modular programming in C++.
+
+\newpage
+
+\section{Design and Implementation}
+\subsection*{Class and Object Design}
+
+The Witcher Tracker project embraces an object-oriented architecture centered around well-defined classes, each encapsulating a distinct responsibility within the simulation. This modular design promotes maintainability, extensibility, and clear abstraction.
+
+At the core of the system lies the \texttt{WitcherTracker} class, which serves as the main controller and orchestrator of command execution. It holds references to the three major subsystems: \texttt{Inventory}, \texttt{AlchemyKnowledge}, and \texttt{Bestiary}. These subsystems manage data and logic related to resource tracking, potion formulas, and monster effectiveness, respectively. The \texttt{WitcherTracker} also delegates command parsing and classification to the static utility class \texttt{CommandParser}, which tokenizes user input and determines the appropriate action to be executed.
+
+The \texttt{Inventory} class is responsible for tracking Geralt’s stock of ingredients, potions, and trophies. It internally uses \texttt{std::map<std::string, int>} containers to efficiently store quantities and support dynamic additions. This class exposes public methods for querying, incrementing, and decrementing item counts, thus serving as the state manager for all collectible resources.
+
+The \texttt{AlchemyKnowledge} class manages Geralt's known potion recipes and magical signs. Potion data is stored in a map that associates potion names with \texttt{Potion} objects. Each \texttt{Potion} object encapsulates a recipe consisting of ingredient names and their corresponding quantities. The \texttt{AlchemyKnowledge} class also maintains a collection of \texttt{Sign} objects, allowing the system to recognize and validate magical signs when used as counters.
+
+Complementing this, the \texttt{Bestiary} class records the effectiveness of various potions and signs against specific monsters. It maps monster names to \texttt{Beast} objects, where each \texttt{Beast} maintains a list of effective potions and signs. This design supports dynamic learning of new counters through input commands and enables reverse lookups when querying the bestiary.
+
+The \texttt{CommandParser} class plays a foundational role in the system. It is designed as a purely static class, with no instance state, and is responsible for sanitizing input strings, tokenizing them into meaningful components, and validating command structures. It identifies the type of each command (e.g., loot, brew, trade, query) and maps it to a corresponding \texttt{CommandType} enumeration, which is then passed to the \texttt{WitcherTracker} dispatcher.
+
+Individual supporting classes such as \texttt{Potion}, \texttt{Beast}, and \texttt{Sign} are lightweight containers that hold structured data. They provide basic methods for adding elements to their internal lists, such as ingredients in a potion or effective counters in a beast entry. Their simplicity ensures that they function effectively as value objects without introducing unnecessary behavior or complexity.
+
+Inter-class communication is handled through method calls and shared data references. For instance, when Geralt attempts to brew a potion, the \texttt{WitcherTracker} queries the recipe from \texttt{AlchemyKnowledge}, checks availability in the \texttt{Inventory}, and updates both modules accordingly. Similarly, when learning a new counter for a monster, the system updates both the \texttt{Bestiary} and \texttt{AlchemyKnowledge} to maintain consistency.
+
+This architecture adheres to key object-oriented principles:
+\begin{itemize}
+    \item \textbf{Encapsulation}: Internal data such as inventory contents or potion formulas are protected behind public interfaces.
+    \item \textbf{Separation of Concerns}: Parsing, command dispatching, data storage, and behavior logic are isolated in dedicated classes.
+    \item \textbf{Single Responsibility}: Each class focuses on one domain—such as storing ingredients, mapping monsters, or parsing commands.
+    \item \textbf{Open/Closed Principle}: New command types or game mechanics can be added with minimal impact on existing code, making the system easily extensible.
+\end{itemize}
+
+In conclusion, the class design of the Witcher Tracker leverages the strengths of object-oriented programming to deliver a modular, extensible, and intuitive framework that cleanly separates data concerns from behavior, enabling robust handling of simulated game actions.
+
+\subsection*{Data Structures}
+
+The Witcher Tracker project relies on a combination of STL containers and custom classes to represent the core entities and relationships in the simulated game world. The use of standard library data structures allows the program to efficiently store, access, and manipulate data without imposing fixed limitations on size or capacity.
+
+At the foundational level, the program uses \texttt{std::map<std::string, int>} to track quantities of items in the \texttt{Inventory} class. Three separate maps are maintained internally to represent ingredients, potions, and trophies respectively. Each map allows constant-time insertion and logarithmic-time lookups, enabling the system to respond quickly to inventory queries, additions, and removals. This choice is especially beneficial in a context where item names are string-based and can be dynamically added as new content is introduced.
+
+The \texttt{AlchemyKnowledge} class manages potion formulas using a \texttt{std::map<std::string, Potion>}. Here, each potion name maps to a \texttt{Potion} object, which encapsulates a vector of ingredient names and a parallel vector of corresponding quantities. The parallel vector design ensures that each ingredient and its amount can be iterated or accessed in sync. This structure facilitates efficient parsing and construction of recipes during knowledge acquisition commands, as well as fast validation during brewing.
+
+In addition, \texttt{AlchemyKnowledge} maintains a map of known magical signs using \texttt{std::map<std::string, Sign>}. The primary purpose of this structure is validation—ensuring that only known signs are used in commands related to monster counters. The signs themselves are lightweight objects holding only a name attribute.
+
+The \texttt{Bestiary} subsystem uses a \texttt{std::map<std::string, Beast>} to manage monster knowledge. Each \texttt{Beast} object contains two \texttt{std::vector<std::string>} containers: one for effective signs and another for effective potions. These vectors are used to store lists of known counters for each monster. Their dynamic nature supports incremental updates when new knowledge is learned via user commands. The contents are also sorted for consistent output formatting during bestiary queries.
+
+To represent individual items and entities, several custom classes are defined. These include \texttt{Ingredient}, \texttt{Potion}, \texttt{Trophy}, \texttt{Sign}, and \texttt{Beast}. Most of these classes are simple data containers, encapsulating only the fields necessary to represent each entity (e.g., name and quantity for ingredients and potions). However, some—such as \texttt{Potion} and \texttt{Beast}—include small helper methods for adding ingredients or counters, providing convenience for data manipulation.
+
+The central class \texttt{WitcherTracker} integrates all these structures. It does not directly manipulate raw containers but instead delegates responsibilities to \texttt{Inventory}, \texttt{AlchemyKnowledge}, and \texttt{Bestiary}. This layered approach encourages separation of concerns and allows each subsystem to encapsulate its own data and operations.
+
+Overall, the design avoids static arrays entirely, opting for flexible and type-safe STL containers that support dynamic expansion. This approach allows the Witcher Tracker to scale gracefully and ensures that the addition of new items, potions, or monsters does not require structural changes to the codebase. The interplay between maps and vectors, supported by custom objects, offers a clean and extensible data model well-suited to the simulation of a text-based RPG logic system.
+
+\newpage
+
+\subsection*{Execution Flow}
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\textwidth]{flowchart.drawio.png}
+    \caption{Flowchart of command parsing and dispatch}
+    \label{fig:flowchart}
+\end{figure}
+
+\subsection*{Tokenizer Function Pseudocode}
+
+\begin{verbatim}
+function tokenizeInput(input):
+    tokens = []
+    i = 0
+    skip leading whitespace
+
+    if input starts with "What":
+        tokens.push("What")
+        skip to "is"
+        tokens.push("is")
+
+        if next word is "in":
+            tokens.push("in")
+            extract potion name until '?'
+            tokens.push(potion name)
+            if '?' found: tokens.push('?')
+
+        else if next words are "effective against":
+            tokens.push("effective", "against")
+            extract monster name until '?'
+            tokens.push(monster name)
+            if '?' found: tokens.push('?')
+
+        return tokens
+
+    else if input starts with "Total":
+        tokens.push("Total")
+        extract category (ingredient/potion/trophy)
+        tokens.push(category)
+
+        if next token is an item name:
+            extract and push it
+
+        if '?' found: tokens.push('?')
+        return tokens
+
+    else if input starts with "Geralt":
+        tokens.push("Geralt")
+        detect next keyword:
+            if "brews":
+                tokens.push("brews")
+                extract and push potion name
+
+            else if "learns":
+                tokens.push("learns")
+                locate "sign" or "potion"
+                extract name before keyword
+                tokens.push(name, keyword)
+
+                if "is effective against":
+                    tokens.push("is", "effective", "against")
+                    extract and push monster name
+
+                else if "consists of":
+                    tokens.push("consists", "of")
+                    loop over ingredients:
+                        extract quantity and name
+                        tokens.push(quantity, name)
+                        handle commas
+
+            else if "loots":
+                tokens.push("loots")
+                loop:
+                    extract quantity and ingredient
+                    tokens.push(quantity, name)
+                    handle commas
+
+            else if "trades":
+                tokens.push("trades")
+                loop:
+                    extract trophy quantity and name
+                    detect "for"
+                    extract ingredient quantity and name
+
+            else if "encounters":
+                tokens.push("encounters", "a")
+                extract and push monster name
+
+        return tokens
+
+    else if input == "Exit":
+        return ["Exit"]
+
+    // fallback parser
+    while i < len(input):
+        skip whitespace
+        if input[i] == ',':
+            tokens.push(',')
+        else:
+            extract next token and push it
+
+    return tokens
+\end{verbatim}
+
+\subsection*{Key Snippets}
+
+This section highlights two representative code excerpts that are crucial for understanding the internal mechanics of the Witcher Tracker application. These snippets exemplify the logic-heavy and decision-centric parts of the program that lie at the heart of user input handling and core gameplay logic.
+
+\subsection*{1. Tokenization Logic — \texttt{tokenizeInput} Function}
+
+One of the most central components of the application is the tokenization mechanism implemented in the \texttt{CommandParser} class. The \texttt{tokenizeInput} function is responsible for parsing free-form user inputs into structured tokens that can be categorized and processed by the program. This function is particularly robust, as it identifies different command categories such as "What is in...", "Geralt brews...", and "Geralt learns...".
+
+Below is a simplified excerpt from the part of the function that recognizes bestiary queries:
+
+\begin{verbatim}
+    
+if (input.substr(i, 4) == "What" && ...) {
+    tokens.push_back("What");
+    i += 4;
+    ...
+    if (input.substr(i, 2) == "is") {
+        tokens.push_back("is");
+        i += 2;
+        ...
+        if (input.substr(i, 9) == "effective") {
+            tokens.push_back("effective");
+            i += 9;
+            ...
+            if (input.substr(i, 7) == "against") {
+                tokens.push_back("against");
+                i += 7;
+                ...
+                // Capture monster name
+                ...
+            }
+        }
+    }
+}
+\end{verbatim}
+
+This logic performs nested pattern matching, incrementally consuming the input string while identifying reserved keywords. It is robust against spacing inconsistencies and is capable of extracting variable-length monster or potion names. The result is a list of tokens that abstracts away the raw string into a format that can be validated and dispatched by the rest of the system.
+
+The modular nature of this function also allows it to gracefully fall back on a generic parsing strategy if the command does not match known patterns, making it versatile yet tightly structured. This approach enables the program to interpret a variety of command types while maintaining strict grammar compliance.
+
+\subsection*{2. Encounter Simulation — \texttt{executeEncounter} Function}
+
+Another core snippet resides in the \texttt{WitcherTracker} class, which coordinates the system's behavior. The \texttt{executeEncounter} function embodies the game’s primary decision-making logic: determining whether Geralt can defeat a monster based on his inventory and known effectiveness counters.
+
+\begin{verbatim}
+Beast *beast = bestiary.getBeast(monsterName);
+if (!beast) {
+    cout << "Geralt is unprepared and barely escapes with his life\n";
+    return 0;
+}
+
+bool hasEffectiveCounter = false;
+for (const auto &potionName : beast->effectivePotions) {
+    if (inventory.getPotionQuantity(potionName) > 0) {
+        hasEffectiveCounter = true;
+        break;
+    }
+}
+
+if (!hasEffectiveCounter && !beast->effectiveSigns.empty()) {
+    hasEffectiveCounter = true;
+}
+
+if (hasEffectiveCounter) {
+    ...
+    cout << "Geralt defeats " << monsterName << "\n";
+} else {
+    cout << "Geralt is unprepared and barely escapes with his life\n";
+}
+\end{verbatim}
+
+This snippet illustrates how the program bridges multiple components—\texttt{Bestiary}, \texttt{Inventory}, and \texttt{AlchemyKnowledge}—to evaluate combat outcomes. It first checks if the beast is known and whether any of its counters (potions or signs) are available. Effective potions must exist in the inventory, while signs are treated as passively available if known.
+
+The conditional structure leads to one of two outcomes: either Geralt defeats the monster and gains a trophy, or he escapes unsuccessfully. This binary resolution mirrors traditional RPG mechanics and demonstrates how game logic is built on simple but well-structured rules tied to the internal state.
+
+These two snippets, though partial in scope, reflect key architectural philosophies in the application: layered abstraction, state-driven behavior, and deterministic input evaluation. Together, they illustrate how the program translates textual user input into meaningful in-game consequences.
+
+\section{Challenges and Solutions}
+
+The development of the Witcher Tracker project presented several notable challenges, both in terms of software architecture and specific implementation decisions. The following subsections outline key obstacles encountered during the project and the solutions applied to address them effectively.
+
+\subsection*{1. Designing a Modular and Maintainable Architecture}
+
+\textbf{Challenge:}  
+One of the early challenges was designing a scalable object-oriented architecture that could handle multiple systems—inventory, alchemy, bestiary, and command parsing—without making the code tightly coupled or overly complex.
+
+\textbf{Solution:}  
+This was addressed by applying principles of modular design and encapsulation. Each major responsibility was isolated in its own class: \texttt{Inventory} for item tracking, \texttt{AlchemyKnowledge} for potion recipes and signs, and \texttt{Bestiary} for monster knowledge. These subsystems are orchestrated by the \texttt{WitcherTracker} class, which serves as a controller without directly exposing internal data. This separation of concerns made it easier to reason about each component in isolation and extend or debug them without affecting unrelated parts of the codebase.
+
+\subsection*{2. Implementing Flexible yet Strict Command Parsing}
+
+\textbf{Challenge:}  
+Parsing natural-language-like input with rigid structure—such as \texttt{Geralt learns Swallow potion consists of 1 mandrake, 2 celandine}—required a tokenizer that could accurately identify commands while also detecting malformed input (e.g., extra commas, invalid numbers, or inconsistent spacing).
+
+\textbf{Solution:}  
+The \texttt{CommandParser} class was implemented with a custom tokenizer that uses a finite state approach and nested control structures to parse known command patterns. Helper methods such as \texttt{isPositiveInteger}, \texttt{isValidPotionNameToken}, and \texttt{hasCommaSpacingError} were created to enforce grammar rules and validate input at multiple stages. Additionally, fallback tokenization logic was added for unexpected or malformed input, allowing the program to handle errors gracefully and consistently output \texttt{INVALID} when needed.
+
+\subsection*{3. Preventing Logic Duplication Across Subsystems}
+
+\textbf{Challenge:}  
+Many operations—such as checking whether a potion exists, verifying sufficient ingredients, or updating an entry in the bestiary—required logic that could easily have been duplicated across multiple classes, leading to fragile code.
+
+\textbf{Solution:}  
+To avoid redundancy, specialized helper functions and centralized checks were implemented. For example, the \texttt{AlchemyKnowledge} class provides methods like \texttt{hasPotion()} and \texttt{getPotionIngredients()} to encapsulate lookup logic. Similarly, inventory checks and updates are encapsulated within the \texttt{Inventory} class. This not only improves code reuse but also ensures that rules (e.g., potion availability or removal) are consistently enforced across the program.
+
+\subsection*{4. Managing Edge Cases in Brewing and Combat}
+
+\textbf{Challenge:}  
+Commands such as brewing or encountering monsters involve multiple dependent systems and state changes. Handling edge cases—like brewing a potion without a known formula or fighting a monster without any effective counters—required careful control flow and validation.
+
+\textbf{Solution:}  
+Guard conditions were applied to prevent unsafe operations. For instance, \texttt{executeBrewAction} first checks whether the potion formula exists and whether Geralt has sufficient ingredients. Only if both checks pass does the function proceed to update the inventory. Similarly, \texttt{executeEncounter} ensures that monster knowledge exists in the bestiary and that Geralt has access to at least one effective potion or sign before declaring victory. These layered checks contribute to both correctness and user clarity.
+
+\subsection*{5. Ensuring Deterministic Output and Sorting}
+
+\textbf{Challenge:}  
+For queries such as \texttt{Total ingredient?} or \texttt{What is effective against Drowner?}, the output order needed to be deterministic (alphabetical or quantity-based) to facilitate grading and readability.
+
+\textbf{Solution:}  
+All relevant output-producing functions (e.g., \texttt{getAllIngredients()}, \texttt{getEffectiveCounters()}) internally sort the result vectors before formatting the output. Sorting criteria such as quantity-descending and name-ascending were carefully implemented to match the project requirements. This guarantees consistent and predictable output for the same inputs.
+
+\subsection*{6. Balancing Strict Validation with User Flexibility}
+
+\textbf{Challenge:}  
+It was important to enforce strict input formatting without frustrating the user experience with overly sensitive parsing logic.
+
+\textbf{Solution:}  
+The parser was carefully tuned to tolerate reasonable spacing variations and handle edge punctuation, while still rejecting commands with critical syntax violations such as duplicate commas, invalid tokens, or missing keywords. This balance ensures both robustness and usability, reducing false negatives while still catching malformed input reliably.
+
+---
+
+Together, these challenges and the corresponding solutions shaped a robust and modular implementation. The structured object-oriented design, combined with defensive parsing strategies and strong separation of concerns, enabled the system to scale while remaining maintainable and testable.
+
+\section{Usage Guide}
+
+This section outlines how to compile, run, and interact with the Witcher Tracker program. It is designed as a command-line application and supports structured user input to simulate inventory management, potion brewing, bestiary updates, and monster encounters. Users are expected to enter commands following a predefined grammar that mimics natural language.
+
+\subsection*{Compilation Instructions}
+
+To compile the program, ensure you have a C++ compiler installed (such as \texttt{g++}) that supports C++11 or later. Then, use the following command from the terminal:
+
+\begin{verbatim}
+g++ -std=c++11 -o WitcherTracker main.cpp WitcherTracker.cpp AlchemyKnowledge.cpp \
+Beast.cpp Bestiary.cpp CommandParser.cpp Inventory.cpp Potion.cpp
+\end{verbatim}
+
+This will generate an executable named \texttt{WitcherTracker} (or \texttt{WitcherTracker.exe} on Windows).
+
+\subsection*{Execution}
+
+Once compiled, the program can be run using the following command:
+
+\begin{verbatim}
+./WitcherTracker
+\end{verbatim}
+
+The program enters a prompt loop and waits for user input. Each line should be a complete command. The program terminates when the user types:
+
+\begin{lstlisting}
+Exit
+\end{lstlisting}
+
+\subsection*{Example Session}
+
+Below is a sample session showing valid input commands and their corresponding output:
+
+\section*{Test Case 1: Loot Action}
+
+\textbf{Input:}
+\begin{lstlisting}
+Geralt loots 4 Quebrith, 2 Rebis
+\end{lstlisting}
+
+\textbf{Output:}
+\begin{lstlisting}
+Alchemy ingredients obtained
+\end{lstlisting}
+
+\textbf{Explanation:} Geralt adds 4 Quebrith and 2 Rebis to his ingredient inventory.
+
+\section*{Test Case 2: Effectiveness Knowledge}
+
+\textbf{Input:}
+\begin{lstlisting}
+Geralt learns Igni sign is effective against Drowner
+\end{lstlisting}
+
+\textbf{Output:}
+\begin{lstlisting}
+New bestiary entry added: Drowner
+\end{lstlisting}
+
+\textbf{Explanation:} The program updates the bestiary to show that Igni is effective against Drowners. If the beast already existed, it would print an update message instead.
+
+\section*{Test Case 3: Potion Formula Knowledge}
+
+\textbf{Input:}
+\begin{lstlisting}
+Geralt learns Black Blood potion consists of 2 Rebis, 3 Vitriol
+\end{lstlisting}
+
+\textbf{Output:}
+\begin{lstlisting}
+New alchemy formula obtained: Black Blood
+\end{lstlisting}
+
+\textbf{Explanation:} A new potion recipe is stored with its required ingredients. The system now allows this potion to be brewed, provided the ingredients are present.
+
+\section*{Test Case 4: Brew Action}
+
+\textbf{Input:}
+\begin{lstlisting}
+Geralt brews Black Blood
+\end{lstlisting}
+
+\textbf{Output:}
+\begin{lstlisting}
+Alchemy item created: Black Blood
+\end{lstlisting}
+
+\textbf{Explanation:} Geralt successfully brews Black Blood if the inventory contains at least 2 Rebis and 3 Vitriol. The required ingredients are consumed.
+
+\section*{Test Case 5: Encounter}
+
+\textbf{Input:}
+\begin{lstlisting}
+Geralt encounters a Drowner
+\end{lstlisting}
+
+\textbf{Output:}
+\begin{lstlisting}
+Geralt defeats Drowner
+\end{lstlisting}
+
+\textbf{Explanation:} Geralt defeats the monster using either an effective sign (Igni) or a known effective potion (if available in inventory). A Drowner trophy is added to inventory.
+
+\section*{Test Case 6: Trade Action}
+
+\textbf{Input:}
+\begin{lstlisting}
+Geralt trades 1 Drowner trophy for 5 Quebrith
+\end{lstlisting}
+
+\textbf{Output:}
+\begin{lstlisting}
+Trade successful
+\end{lstlisting}
+
+\textbf{Explanation:} Geralt trades a Drowner trophy for 5 Quebrith. Inventory is updated by removing the trophy and adding the ingredients.
+
+\section*{Test Case 7: Specific Inventory Query}
+
+\textbf{Input:}
+\begin{lstlisting}
+Total potion Black Blood?
+\end{lstlisting}
+
+\textbf{Output:}
+\begin{lstlisting}
+1
+\end{lstlisting}
+
+\textbf{Explanation:} The system returns how many of the specified potion Geralt currently has in his inventory.
+
+\section*{Test Case 8: All Inventory Query}
+
+\textbf{Input:}
+\begin{lstlisting}
+Total ingredient?
+\end{lstlisting}
+
+\textbf{Output:}
+\begin{lstlisting}
+5 Quebrith
+\end{lstlisting}
+
+\textbf{Explanation:} Lists all current alchemy ingredients and their quantities after a series of loot and trade actions.
+
+\section*{Test Case 9: Bestiary Query}
+
+\textbf{Input:}
+\begin{lstlisting}
+What is effective against Drowner?
+\end{lstlisting}
+
+\textbf{Output:}
+\begin{lstlisting}
+Igni
+\end{lstlisting}
+
+\textbf{Explanation:} Lists all known effective signs and potions for the specified monster. Entries are sorted alphabetically if more than one is available.
+
+\section*{Test Case 10: Alchemy Query}
+
+\textbf{Input:}
+\begin{lstlisting}
+What is in Black Blood?
+\end{lstlisting}
+
+\textbf{Output:}
+\begin{lstlisting}
+3 Vitriol, 2 Rebis
+\end{lstlisting}
+
+\textbf{Explanation:} Returns the formula (ingredients and quantities) for the specified potion, sorted first by quantity descending, then alphabetically.
+
+\subsection*{Error Handling}
+
+If the user inputs a malformed or unsupported command, the program will respond with:
+
+\begin{lstlisting}
+INVALID
+\end{lstlisting}
+
+Examples of invalid input include missing keywords, extra commas, non-numeric quantities, or unrecognized command structures. The parser strictly enforces grammar to ensure consistency and prevent undefined behavior.
+
+---
+
+This section provides a comprehensive walkthrough for users and graders. If you're preparing a `.tex` report, this is ready to copy-paste directly. Would you also like a table summarizing valid command templates?
+
+\section{Code Structure Summary}
+
+The Witcher Tracker project is implemented in C++ using a modular, object-oriented design. The program is composed of multiple source files and headers, each encapsulating a distinct responsibility. This structure facilitates readability, reusability, and ease of debugging. Below is a brief overview of the key components and their respective roles in the system:
+
+\subsection*{1. \texttt{main.cpp}}
+
+This is the entry point of the application. It initializes the \texttt{WitcherTracker} object and enters a user input loop, where it continuously reads commands from standard input. Each line is passed to the \texttt{WitcherTracker::executeLine} method for processing. This file contains no logic beyond launching and orchestrating the main loop.
+
+\subsection*{2. \texttt{WitcherTracker.h} and \texttt{WitcherTracker.cpp}}
+
+These files define and implement the core controller class, \texttt{WitcherTracker}, which acts as the central coordinator of all subsystems. It delegates commands to appropriate handler functions based on parsed command types and maintains instances of the \texttt{Inventory}, \texttt{AlchemyKnowledge}, and \texttt{Bestiary} classes. It also includes command dispatching logic through the use of an enum class, \texttt{CommandType}.
+
+\subsection*{3. \texttt{CommandParser.cpp}}
+
+This file contains the static utility class \texttt{CommandParser}, which is responsible for analyzing and validating user input. It includes methods to sanitize strings, tokenize commands, and classify input based on specific patterns. This module is essential for the interpreter’s ability to distinguish between valid and invalid syntax and is central to robust user interaction.
+
+\subsection*{4. \texttt{Inventory.cpp}}
+
+This module manages Geralt’s inventory, including ingredients, potions, and trophies. It uses \texttt{std::map} containers to dynamically store and retrieve item quantities. It provides methods for adding, removing, querying, and listing items. The \texttt{Inventory} class ensures that inventory state remains consistent across actions such as looting, brewing, and trading.
+
+\subsection*{5. \texttt{AlchemyKnowledge.cpp}}
+
+This file implements the \texttt{AlchemyKnowledge} class, which stores known potion formulas and magical signs. Potion data is stored as a mapping from potion names to \texttt{Potion} objects, which in turn hold vectors of ingredient names and required quantities. This module supports actions such as learning new recipes and querying potion contents.
+
+\subsection*{6. \texttt{Bestiary.cpp}}
+
+The \texttt{Bestiary} class manages information about monsters (beasts) and the known effective potions or signs against them. Each monster is represented as a \texttt{Beast} object, and the bestiary stores them in a \texttt{std::map} for quick lookup. This module supports knowledge acquisition and in-combat decision-making.
+
+\subsection*{7. \texttt{Potion.cpp}, \texttt{Beast.cpp}}
+
+These files define lightweight supporting classes used by the core systems. \texttt{Potion} represents a potion's recipe and name, while \texttt{Beast} tracks which signs or potions are effective against a given monster. These classes encapsulate logic specific to their entities and provide utility methods for updates.
+
+\subsection*{8. \texttt{WitcherTracker.h}}
+
+This header file includes all class declarations and constants used across the system. It defines the interfaces for major classes and enumerations like \texttt{CommandType}. By including this header, all source files gain access to the complete type system of the project.
+
+\subsection*{Integration Overview}
+
+Each component in the system communicates indirectly via the \texttt{WitcherTracker} class. For example, upon receiving a "Geralt brews Swallow" command, the program passes the input through \texttt{CommandParser}, which classifies the command. Then, the \texttt{WitcherTracker} dispatches execution to the corresponding method, which may involve querying \texttt{AlchemyKnowledge} for the recipe and updating the \texttt{Inventory} accordingly.
+
+This layered and modular structure allows the program to cleanly separate concerns while enabling seamless integration between parsing, state management, and game logic.
+
+\section{AI Assistance}
+
+Throughout the development and documentation of this project, artificial intelligence tools were utilized to support various tasks, primarily focused on debugging, documentation structuring, and LaTeX formatting.
+
+\subsection*{Tools Used}
+
+\begin{itemize}
+    \item \textbf{ChatGPT-4o (OpenAI)}: This tool was used extensively during the documentation phase. It assisted in structuring and generating formatted LaTeX sections such as the Methodology, Implementation Details, Results, and Discussion. It also helped convert logic and code structure into readable pseudocode and provided suggestions for improving report consistency and formatting aesthetics.
+
+    \item \textbf{Claude Sonnet 4 (Anthropic)}: Used primarily for debugging support during the implementation of certain C++ modules. Claude provided code-level suggestions and helped analyze edge cases, assisting in resolving logic errors related to input parsing and command classification.
+\end{itemize}
+
+
+
+
+\end{document}
